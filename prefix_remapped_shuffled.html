@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13k - Ultimate Encoder / Decoder (14069b Record)</title>
+    <script src="words.js"></script>
+    <style>
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: var(--panel); border: 1px solid #30363d; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+        textarea { width: 100%; height: 180px; background: #010409; color: #7ee787; border: 1px solid #30363d; border-radius: 6px; font-family: monospace; font-size: 12px; padding: 10px; box-sizing: border-box; resize: vertical; }
+        button { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+        button:hover { background: #2ea043; }
+        .metrics { display: flex; gap: 20px; margin-top: 10px; font-weight: bold; font-size: 14px; }
+        .highlight { color: var(--accent); }
+        h2 { margin-top: 0; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1 style="font-size: 24px; margin-bottom: 20px; color: #f0f6fc;">Pipeline d'Encodage Ultime — JS13k</h1>
+
+    <div class="card">
+        <h2>1. Encodeur Ultime (Génération du flux compressé)</h2>
+        <p style="font-size: 13px; color: #8b949e;">Prend la liste brute de <code>words.js</code>, applique le remap fréquentiel, extrait les pluriels en 's' (via le marqueur 9), trie localement, puis assemble le flux selon l'ordre optimal de tes blocs de lettres.</p>
+        <button onclick="runEncoder()">Générer l'Output Encodé</button>
+        
+        <div class="metrics">
+            <div>Taille brute du flux : <span id="lbl-encoded-size" class="highlight">0</span> caractères</div>
+        </div>
+        <div style="margin-top: 15px;">
+            <label style="display:block; margin-bottom: 5px; font-size: 12px; color: #8b949e;">Flux de texte généré :</label>
+            <textarea id="txt-encoded-output" readonly placeholder="Le flux de texte condensé apparaîtra ici..."></textarea>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>2. Simulateur de Décodeur JS13k (Vérification et exactitude)</h2>
+        <p style="font-size: 13px; color: #8b949e;">Ce module simule exactement le code ultra-léger qui sera embarqué dans ton jeu. Il va lire le flux ci-dessus, inverser les transformations et reconstruire l'intégralité du dictionnaire d'origine.</p>
+        <button onclick="runDecoder()" style="background: #1f6feb;">Lancer le Décodage de Test</button>
+        
+        <div class="metrics">
+            <div>Mots décodés : <span id="lbl-decoded-count" class="highlight">0</span> / <span id="lbl-original-count">0</span></div>
+            <div>Statut de l'intégrité : <span id="lbl-status">-</span></div>
+        </div>
+        <div style="margin-top: 15px;">
+            <label style="display:block; margin-bottom: 5px; font-size: 12px; color: #8b949e;">Échantillon des mots restaurés :</label>
+            <textarea id="txt-decoded-output" readonly placeholder="Les mots restaurés apparaîtront ici pour contrôle visuel..."></textarea>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Configuration gravée dans le marbre issues de tes optimisations successives
+    const MAP_ALPHABET = "esaoriltnudpcmyhgbkfwvzxjq";
+    const BLOCKS_ORDER  = "lrqhegnipvzktubmsxowcyjfda";
+
+    // --- LOGIQUE DE L'ENCODEUR ---
+    function runEncoder() {
+        if (typeof words === 'undefined') {
+            alert("Erreur : words.js n'est pas chargé ou ne contient pas la variable 'words'.");
+            return;
+        }
+
+        const remap = (word) => [...word].map(c => String.fromCharCode(97 + MAP_ALPHABET.indexOf(c))).join('');
+        const wordSet = new Set(words);
+        let used = new Set();
+        let remappedList = [];
+
+        // Étape 1 : Remap + Optimisation 9=s (Pluriels)
+        words.forEach(w => {
+            if (used.has(w)) return;
+            let marker = "";
+            if (wordSet.has(w + 's')) {
+                marker = "9";
+                used.add(w + 's');
+            }
+            remappedList.push(remap(w) + marker);
+        });
+
+        // Étape 2 : Tri lexicographique pour permettre le regroupement par préfixe
+        remappedList.sort();
+
+        // Étape 3 : Isolation des blocs par leur première lettre remappée
+        let blocks = {};
+        remappedList.forEach(w => {
+            let firstChar = w[0];
+            if (!blocks[firstChar]) blocks[firstChar] = [];
+            blocks[firstChar].push(w);
+        });
+
+        // Étape 4 : Assemblage du flux final selon l'ordre optimal de ton record (BLOCKS_ORDER)
+        let res = "";
+        let prev = "";
+        const getCP = (a, b) => { let i=0; while(i<a.length && i<b.length && a[i]===b[i]) i++; return i; };
+
+        for (let char of BLOCKS_ORDER) {
+            let currentBlock = blocks[char] || [];
+            currentBlock.forEach(w => {
+                let n = getCP(prev, w);
+                res += n + w.slice(n);
+                prev = w;
+            });
+        }
+
+        // Affichage des métriques de l'encodeur
+        document.getElementById('txt-encoded-output').value = res;
+        document.getElementById('lbl-encoded-size').innerText = res.length;
+        document.getElementById('lbl-original-count').innerText = words.length;
+    }
+
+    // --- LOGIQUE DU DÉCODEUR (Format Micro-code pour ta JS13k) ---
+    function runDecoder() {
+        const data = document.getElementById('txt-encoded-output').value;
+        if (!data) {
+            alert("Veuillez d'abord générer le flux encodé !");
+            return;
+        }
+
+        // Début du bloc de décodage ultra-condensé utilisable dans ton jeu
+        let decodedWords = [], p = "";
+        
+        // Regex magique : capture chaque chiffre "n" et son suffixe associé "s"
+        data.replace(/(\d)([a-z9]*)/g, (_, n, s) => {
+            p = p.slice(0, n) + s; // Reconstitution du mot remappé
+            
+            // Extraction et traitement du marqueur de pluriel 9
+            let hasPlural = p.includes('9');
+            let cleanWord = p.replace('9', '');
+            
+            // Inversion de la table de remappage fréquentielle
+            let restored = [...cleanWord].map(c => MAP_ALPHABET[c.charCodeAt(0) - 97]).join('');
+            
+            decodedWords.push(restored);
+            if (hasPlural) decodedWords.push(restored + 's');
+        });
+        // Fin du bloc de décodage
+
+        // --- PHASE DE VÉRIFICATION ET CONTRÔLE DE VALIDITÉ ---
+        document.getElementById('lbl-decoded-count').innerText = decodedWords.length;
+        
+        // Tri des deux listes pour comparer l'exactitude des sets
+        let originalSorted = [...words].sort();
+        let decodedSorted = [...decodedWords].sort();
+        
+        let isPerfect = true;
+        if (originalSorted.length !== decodedSorted.length) {
+            isPerfect = false;
+        } else {
+            for (let i = 0; i < originalSorted.length; i++) {
+                if (originalSorted[i] !== decodedSorted[i]) {
+                    isPerfect = false;
+                    break;
+                }
+            }
+        }
+
+        const statusEl = document.getElementById('lbl-status');
+        if (isPerfect) {
+            statusEl.innerText = "✖ 100% VALIDE ET INTEGRE";
+            statusEl.style.color = "#7ee787";
+        } else {
+            statusEl.innerText = "⚠️ COMPRESSION CORROMPUE (Faux positifs ou manquants)";
+            statusEl.style.color = "#f85149";
+        }
+
+        // Affichage d'un extrait pour l'inspection visuelle
+        document.getElementById('txt-decoded-output').value = decodedSorted.slice(0, 300).join(', ') + "...";
+    }
+</script>
+</body>
+</html>

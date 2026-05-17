@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13k - Ultra Block Optimizer (Stochastic Search)</title>
+    <script src="words.js"></script>
+    <style>
+        body { background: #0d1117; color: #c9d1d9; font-family: monospace; padding: 20px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 20px; max-width: 1000px; margin: 0 auto; }
+        .panel { background: #010409; border: 1px solid #30363d; padding: 15px; border-radius: 6px; margin-top: 20px; }
+        .success { color: #7ee787; font-weight: bold; font-size: 1.2em; }
+        button { background: #238636; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        pre { background: #000; padding: 15px; border-radius: 4px; overflow-x: auto; color: #8b949e; max-height: 400px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h2>Optimiseur Stochastique Haute Performance (Moins de 24h)</h2>
+        <p>Ce script part de ton meilleur ordre glouton et applique des mutations, permutations locales et perturbations aléatoires pour briser les optima locaux de Gzip.</p>
+        
+        <button id="btn-start" onclick="startStochasticOptimization()">Lancer la recherche intensive</button>
+        
+        <div class="panel">
+            <h3>Résultats en Temps Réel</h3>
+            <p>Générations testées : <span id="lbl-gen" class="success">0</span></p>
+            <p>Meilleur score Gzip absolu : <span id="lbl-best-gzip" class="success">14148 bytes</span></p>
+            <p>Ordre optimal actuel : <span id="lbl-best-map" style="color: #58a6ff; font-weight: bold;">lhrqsbmenjgxzacdfipkutovwy</span></p>
+        </div>
+
+        <div class="panel">
+            <h3>Historique des Améliorations</h3>
+            <pre id="txt-log">Prêt...</pre>
+        </div>
+    </div>
+</div>
+
+<script>
+    const MAP_ORIGINAL = "esaoriltnudpcmyhgbkfwvzxjq";
+    let wordsByFirstLetter = {};
+    
+    // On initialise avec ton record actuel
+    let bestGlobalMap = "lhrqsbmenjgxzacdfipkutovwy".split('');
+    let bestGlobalGzip = 14148;
+
+    async function getGzipSize(text) {
+        const stream = new ReadableStream({
+            start(controller) {
+                controller.enqueue(new TextEncoder().encode(text));
+                controller.close();
+            }
+        });
+        const compressionStream = stream.pipeThrough(new CompressionStream('gzip'));
+        const response = new Response(compressionStream);
+        const buffer = await response.arrayBuffer();
+        return buffer.byteLength;
+    }
+
+    const getCP = (a, b) => { let i=0; while(i<a.length && i<b.length && a[i]===b[i]) i++; return i; };
+
+    function encodeWithBlockOrder(blockOrderArr) {
+        let res = "", prev = "";
+        for (let char of blockOrderArr) {
+            let block = wordsByFirstLetter[char] || [];
+            block.forEach(w => {
+                let n = getCP(prev, w);
+                res += n + w.slice(n);
+                prev = w;
+            });
+        }
+        return res;
+    }
+
+    function log(msg) {
+        const consoleEl = document.getElementById('txt-log');
+        consoleEl.innerText += msg + "\n";
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+    }
+
+    async function startStochasticOptimization() {
+        document.getElementById('btn-start').disabled = true;
+        document.getElementById('txt-log').innerText = "Initialisation du dictionnaire...\n";
+
+        // 1. Remap initial (9=s)
+        const remap = (word) => [...word].map(c => String.fromCharCode(97 + MAP_ORIGINAL.indexOf(c))).join('');
+        const wordSet = new Set(words);
+        let used = new Set();
+        let finalDict = [];
+
+        words.forEach(w => {
+            if (used.has(w)) return;
+            let marker = "";
+            if (wordSet.has(w + 's')) {
+                marker = "9";
+                used.add(w + 's');
+            }
+            finalDict.push(remap(w) + marker);
+        });
+
+        finalDict.sort();
+
+        wordsByFirstLetter = {};
+        finalDict.forEach(w => {
+            let firstChar = w[0];
+            if (!wordsByFirstLetter[firstChar]) wordsByFirstLetter[firstChar] = [];
+            wordsByFirstLetter[firstChar].push(w);
+        });
+
+        log("Démarrage de la recherche par mutations...");
+        
+        let currentOrder = [...bestGlobalMap];
+        let currentSize = bestGlobalGzip;
+        let generation = 0;
+
+        // Boucle infinie. Tu l'arrêtes quand tu veux dans les 24h.
+        while (true) {
+            generation++;
+            if (generation % 50 === 0) {
+                document.getElementById('lbl-gen').innerText = generation;
+            }
+
+            // Créer une copie à muter
+            let candidateOrder = [...currentOrder];
+            
+            // Type de mutation aléatoire
+            let rand = Math.random();
+            if (rand < 0.4) {
+                // 1. Inversion simple de 2 blocs au hasard
+                let idxA = Math.floor(Math.random() * candidateOrder.length);
+                let idxB = Math.floor(Math.random() * candidateOrder.length);
+                let tmp = candidateOrder[idxA];
+                candidateOrder[idxA] = candidateOrder[idxB];
+                candidateOrder[idxB] = tmp;
+            } else if (rand < 0.8) {
+                // 2. Déplacement complet d'un bloc (on coupe un élément et on l'insère ailleurs)
+                let idx = Math.floor(Math.random() * candidateOrder.length);
+                let char = candidateOrder.splice(idx, 1)[0];
+                let target = Math.floor(Math.random() * candidateOrder.length);
+                candidateOrder.splice(target, 0, char);
+            } else {
+                // 3. Double inversion (secousse plus forte)
+                for(let k=0; k<2; k++) {
+                    let idxA = Math.floor(Math.random() * candidateOrder.length);
+                    let idxB = Math.floor(Math.random() * candidateOrder.length);
+                    let tmp = candidateOrder[idxA];
+                    candidateOrder[idxA] = candidateOrder[idxB];
+                    candidateOrder[idxB] = tmp;
+                }
+            }
+
+            // Mesure
+            let text = encodeWithBlockOrder(candidateOrder);
+            let size = await getGzipSize(text);
+
+            // Si c'est égal ou meilleur, on l'adopte (accepter l'équivalence permet de naviguer sur les plateaux)
+            if (size <= currentSize) {
+                currentSize = size;
+                currentOrder = candidateOrder;
+
+                if (size < bestGlobalGzip) {
+                    bestGlobalGzip = size;
+                    bestGlobalMap = [...candidateOrder];
+                    
+                    document.getElementById('lbl-best-gzip').innerText = bestGlobalGzip + " bytes";
+                    document.getElementById('lbl-best-map').innerText = bestGlobalMap.join('');
+                    log(`[GEN ${generation}] Nouveau Record : ${bestGlobalMap.join('')} -> ${bestGlobalGzip} bytes`);
+                }
+            }
+
+            // On redonne de temps en temps la main à l'UI
+            if (generation % 10 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
+        }
+    }
+</script>
+</body>
+</html>

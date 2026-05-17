@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Prefix Encoder — Final</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f; --panel: #12121a; --border: #2a2a3a;
+    --accent: #00ff9d; --accent2: #ff3e6c; --accent3: #a78bfa;
+    --text: #e0e0f0; --muted: #5a5a7a; --mono: 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--mono);
+         font-size: 13px; padding: 24px; max-width: 900px; }
+  h1 { font-size: 11px; letter-spacing: 4px; text-transform: uppercase;
+       color: var(--accent); margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 11px; margin-bottom: 24px; line-height: 1.8; }
+  label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+          color: var(--muted); display: block; margin-bottom: 6px; margin-top: 16px; }
+  textarea { width: 100%; height: 180px; background: var(--panel); border: 1px solid var(--border);
+             color: var(--text); font-family: var(--mono); font-size: 11px; padding: 10px;
+             resize: vertical; outline: none; line-height: 1.5; display: block; }
+  textarea:focus { border-color: var(--accent); }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; margin: 20px 0; }
+  .btn { background: var(--panel); border: 1px solid var(--accent); color: var(--accent);
+         font-family: var(--mono); font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+         padding: 10px 16px; cursor: pointer; transition: all 0.15s; }
+  .btn:hover { background: var(--accent); color: var(--bg); }
+  .btn.b2 { border-color: var(--accent2); color: var(--accent2); }
+  .btn.b2:hover { background: var(--accent2); color: var(--bg); }
+  .btn.b3 { border-color: var(--accent3); color: var(--accent3); }
+  .btn.b3:hover { background: var(--accent3); color: var(--bg); }
+  .stats { background: var(--panel); border: 1px solid var(--border); padding: 14px; margin-bottom: 8px; }
+  .stats h2 { font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+              color: var(--muted); margin-bottom: 10px; }
+  .sr { display: flex; justify-content: space-between; gap: 16px;
+        border-bottom: 1px solid var(--border); padding: 3px 0; font-size: 11px; }
+  .sr:last-child { border-bottom: none; }
+  .v { color: var(--accent); font-weight: bold; text-align: right; }
+  .v.bad { color: var(--accent2); }
+  #log { background: var(--panel); border: 1px solid var(--border); padding: 10px;
+         font-size: 10px; color: var(--muted); max-height: 200px; overflow-y: auto; line-height: 1.9; }
+  .lg { color: var(--accent); } .lb { color: var(--accent2); } .li { color: #ffcc00; }
+</style>
+</head>
+<body>
+
+<h1>Prefix Encoder — Final</h1>
+<p class="sub">
+  <b style="color:var(--accent)">MPR</b>: digit(N) + suffix for each word, globally alpha-sorted.<br>
+  <b style="color:var(--accent3)">+ Tokens</b>: replace top-K frequent tokens (digit+suffix) with uppercase A-Z.<br>
+  Header format: <code>A=4s,B=3s,...\n</code> then the encoded body.
+</p>
+
+<div class="btns">
+  <button class="btn"    onclick="encodeMPR()">▶ ENCODE — MPR only</button>
+  <button class="btn b3" onclick="encodeBest()">★ ENCODE — MPR + best tokens</button>
+  <button class="btn b2" onclick="decode()">↩ DECODE</button>
+</div>
+
+<div class="stats">
+  <h2>Stats</h2>
+  <div class="sr"><span>Mode</span><span class="v" id="s-mode">—</span></div>
+  <div class="sr"><span>Raw length</span><span class="v" id="s-raw">—</span></div>
+  <div class="sr"><span>Zipped (deflate 9)</span><span class="v" id="s-zip">—</span></div>
+  <div class="sr"><span>MPR baseline</span><span class="v" id="s-base">—</span></div>
+  <div class="sr"><span>vs MPR baseline</span><span class="v" id="s-vs">—</span></div>
+  <div class="sr"><span>Tokens (K)</span><span class="v" id="s-k">—</span></div>
+  <div class="sr"><span>Token map</span><span class="v" id="s-map" style="font-size:10px;word-break:break-all;max-width:550px">—</span></div>
+</div>
+
+<label>out</label>
+<textarea id="out" readonly></textarea>
+<label>decoded</label>
+<textarea id="decoded" readonly style="height:110px;"></textarea>
+<label>log</label>
+<div id="log"></div>
+
+<script src="words.js"></script>
+<script>
+const sorted = [...words].sort();
+let lastMode = null;   // 'mpr' | 'tokens'
+let lastDecMap = {};
+let baselineZip = null;
+
+function log(msg, cls) {
+  const d = document.getElementById('log');
+  const el = document.createElement('div');
+  if (cls) el.className = cls;
+  el.textContent = msg;
+  d.appendChild(el);
+  d.scrollTop = d.scrollHeight;
+}
+
+function gzip(str) {
+  return pako.deflate(new TextEncoder().encode(str), {level:9}).length;
+}
+
+function cp(a,b) { let i=0; while(i<a.length&&i<b.length&&a[i]===b[i])i++; return i; }
+
+// Build (N, suffix) token list
+function buildTokens() {
+  let prev=''; const toks=[];
+  for (const w of sorted) {
+    const n=cp(prev,w);
+    toks.push(n + w.slice(n));  // e.g. "4s", "3ed", "0aa"
+    prev=w;
+  }
+  return toks;
+}
+
+// Token frequency map
+function tokenFreq(toks) {
+  const f={};
+  for (const t of toks) f[t]=(f[t]||0)+1;
+  return f;
+}
+
+// Encode with K token substitutions
+// Format: "A=4s,B=3e,...\n" + body
+// Body: uppercase replaces matched token, otherwise original token chars
+// Unambiguous: uppercase A-Z ∉ [0-9a-z], so decoder knows when a token is substituted
+function encodeK(toks, freq, k) {
+  const topK = Object.entries(freq).sort((a,b)=>b[1]-a[1]).slice(0,k);
+  const encMap={}, decMap={};
+  topK.forEach(([tok],i) => {
+    const ch = String.fromCharCode(65+i);
+    encMap[tok]=ch; decMap[ch]=tok;
+  });
+  const header = k===0 ? '' : topK.map(([tok],i)=>String.fromCharCode(65+i)+'='+tok).join(',') + '\n';
+  let body='';
+  for (const t of toks) body += encMap[t] ?? t;
+  return { str: header+body, decMap };
+}
+
+// ─── ENCODE MPR ──────────────────────────────────────────────────────────────
+function encodeMPR() {
+  const toks = buildTokens();
+  const { str } = encodeK(toks, {}, 0);
+  if (baselineZip===null) {
+    baselineZip = gzip(str);
+    document.getElementById('s-base').textContent = baselineZip.toLocaleString() + ' bytes';
+  }
+  document.getElementById('out').value = str;
+  showStats('MPR (no tokens)', str, 0, {});
+  lastMode='mpr'; lastDecMap={};
+  return gzip(str);
+}
+
+// ─── ENCODE MPR + BEST TOKEN SUBSTITUTION ───────────────────────────────────
+function encodeBest() {
+  const toks = buildTokens();
+  const freq = tokenFreq(toks);
+
+  if (baselineZip===null) {
+    baselineZip = gzip(buildTokens().join(''));
+    document.getElementById('s-base').textContent = baselineZip.toLocaleString() + ' bytes';
+  }
+
+  log('Sweeping K=1..26 for best zip...', 'li');
+  let bestZip=Infinity, bestK=0;
+
+  for (let k=1; k<=26; k++) {
+    const {str} = encodeK(toks, freq, k);
+    const z = gzip(str);
+    log(`  K=${k}: zip=${z}`, z<bestZip?'lg':'li');
+    if (z < bestZip) { bestZip=z; bestK=k; }
+  }
+  log(`Best: K=${bestK} → ${bestZip} bytes`, 'lg');
+
+  const {str, decMap} = encodeK(toks, freq, bestK);
+  document.getElementById('out').value = str;
+  showStats(`MPR + tokens (K=${bestK})`, str, bestK, decMap);
+  lastMode='tokens'; lastDecMap=decMap;
+}
+
+// ─── STATS ───────────────────────────────────────────────────────────────────
+function showStats(mode, str, k, decMap) {
+  const raw=str.length, zip=gzip(str);
+  if (baselineZip===null) { baselineZip=zip; document.getElementById('s-base').textContent=zip.toLocaleString()+' bytes'; }
+  const delta=zip-baselineZip, pct=((delta/baselineZip)*100).toFixed(1);
+  document.getElementById('s-mode').textContent = mode;
+  document.getElementById('s-raw').textContent = raw.toLocaleString() + ' chars';
+  document.getElementById('s-zip').textContent = zip.toLocaleString() + ' bytes';
+  const el = document.getElementById('s-vs');
+  el.textContent = (delta>0?'+':'')+delta+' bytes ('+pct+'%)';
+  el.className = 'v' + (delta>0?' bad':'');
+  document.getElementById('s-k').textContent = k>0 ? k+' tokens' : '—';
+  document.getElementById('s-map').textContent = k>0
+    ? Object.entries(decMap).map(([ch,tok])=>ch+'='+tok).join('  ')
+    : '—';
+  log(`[${mode}] raw=${raw} zip=${zip} vs MPR ${delta>0?'+':''}${delta} (${pct}%)`, delta<=0?'lg':'li');
+}
+
+// ─── DECODE ──────────────────────────────────────────────────────────────────
+function decode() {
+  const str = document.getElementById('out').value;
+  if (!str || !lastMode) { log('Run encode first.', 'lb'); return; }
+
+  // Parse header if present
+  let body = str, decMap = {...lastDecMap};
+  const nl = str.indexOf('\n');
+  if (nl >= 0 && nl < 200) {
+    // Re-parse header from string (in case user edited)
+    const headerStr = str.slice(0, nl);
+    decMap = {};
+    for (const part of headerStr.split(',')) {
+      const eq = part.indexOf('=');
+      if (eq>=0) decMap[part.slice(0,eq)] = part.slice(eq+1);
+    }
+    body = str.slice(nl+1);
+  }
+
+  const result=[], hasTokens=Object.keys(decMap).length>0;
+  let prev='', pos=0;
+
+  while (pos < body.length) {
+    const ch = body[pos];
+
+    // Uppercase → token substitution
+    if (hasTokens && ch>='A' && ch<='Z' && decMap[ch] !== undefined) {
+      pos++;
+      const tok = decMap[ch];
+      const n = parseInt(tok[0], 10);
+      const suf = tok.slice(1);
+      const w = prev.slice(0,n) + suf;
+      result.push(w); prev=w;
+    }
+    // Digit → explicit N + suffix
+    else if (ch>='0' && ch<='9') {
+      const n = parseInt(ch, 10); pos++;
+      let suf='';
+      while (pos<body.length && body[pos]>='a' && body[pos]<='z') suf+=body[pos++];
+      const w = prev.slice(0,n)+suf;
+      result.push(w); prev=w;
+    }
+    else pos++; // skip unexpected
+  }
+
+  // Verify
+  const origSet=new Set(words);
+  const missing=[...origSet].filter(w=>!new Set(result).has(w));
+  const extra=result.filter(w=>!origSet.has(w));
+
+  if (result.length===words.length && !missing.length && !extra.length) {
+    log(`✓ Decoded ${result.length} words — perfect match!`, 'lg');
+  } else {
+    log(`✗ ${result.length} words. Missing: ${missing.length}, spurious: ${extra.length}`, 'lb');
+    if (extra.length)   log(`  spurious: ${extra.slice(0,5).join(', ')}`, 'lb');
+    if (missing.length) log(`  missing:  ${missing.slice(0,5).join(', ')}`, 'lb');
+  }
+  document.getElementById('decoded').value = JSON.stringify(result.sort());
+}
+
+window.onload = () => {
+  log(`Loaded ${words.length} words, sorted alphabetically`, 'li');
+  const toks = buildTokens();
+  baselineZip = gzip(toks.join(''));
+  document.getElementById('s-base').textContent = baselineZip.toLocaleString() + ' bytes';
+  log(`MPR baseline: ${baselineZip} bytes`, 'li');
+};
+</script>
+</body>
+</html>

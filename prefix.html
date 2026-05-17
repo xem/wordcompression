@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13k - Global Suffix Optimizer</title>
+    <script src="words.js"></script>
+    <style>
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: var(--panel); border: 1px solid #30363d; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+        .row { display: flex; gap: 10px; align-items: center; margin-bottom: 15px; }
+        textarea { width: 100%; height: 250px; background: #010409; color: #7ee787; border: 1px solid #30363d; border-radius: 6px; font-family: monospace; font-size: 11px; padding: 10px; }
+        button { background: #238636; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        button.alt { background: #21262d; color: var(--accent); border: 1px solid #30363d; }
+        .size-tag { font-weight: bold; color: var(--accent); font-size: 1.2em; }
+        input[type=number] { background: #010409; color: white; border: 1px solid #30363d; padding: 5px; width: 50px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h2>Global Suffix Encoder (The 11.3kb Path)</h2>
+        <div class="row">
+            <label>Suffixes to extract (A-Z):</label>
+            <input type="number" id="limit" value="1" min="0" max="26">
+            <button onclick="runV1()">1. Normal N-Prefix</button>
+            <button onclick="runV2()">2. Global Suffix Markers</button>
+        </div>
+        <div>Size: <span id="eSize" class="size-tag">0</span> bytes</div>
+        <textarea id="encoded"></textarea>
+    </div>
+
+    <div class="card">
+        <h2>Decoder</h2>
+        <div class="row">
+            <button class="alt" onclick="decV1()">Decode V1</button>
+            <button class="alt" onclick="decV2()">Decode V2</button>
+        </div>
+        <div id="dStatus">Ready</div>
+        <textarea id="decoded"></textarea>
+    </div>
+</div>
+
+<script>
+    const $ = id => document.getElementById(id);
+    const getCP = (a, b) => { let i=0; while(i<a.length && i<b.length && a[i]===b[i]) i++; return i; };
+
+    function runV1() {
+        let sorted = [...words].sort(), res = "", prev = "";
+        sorted.map(w => { let n = getCP(prev, w); res += n + w.slice(n); prev = w; });
+        finish(res);
+    }
+
+    function runV2() {
+        const lim = +$('limit').value;
+        const wordSet = new Set(words);
+        
+        // 1. Identify most profitable suffixes
+        let counts = {};
+        const common = ["s","es","ed","ing","er","ly","y","d","st"];
+        words.forEach(w => {
+            common.forEach(s => {
+                if (w.endsWith(s)) {
+                    let r = w.slice(0, -s.length);
+                    if (r.length > 1 && wordSet.has(r)) counts[s] = (counts[s] || 0) + 1;
+                }
+            });
+        });
+
+        const topSuf = Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0, lim).map(e=>e[0]);
+        const header = topSuf.map((s, i) => String.fromCharCode(65+i) + "=" + s).join(',') + "\n\n";
+
+        // 2. Attach suffixes to roots and REMOVE the derived words
+        let used = new Set();
+        let finalDict = [];
+        
+        // Sort by length descending to catch longer suffixes first (ing before s)
+        const sortedSuf = [...topSuf].sort((a,b) => b.length - a.length);
+
+        words.forEach(w => {
+            if (used.has(w)) return;
+            
+            let markers = "";
+            sortedSuf.forEach((s, i) => {
+                let derived = w + s;
+                if (wordSet.has(derived)) {
+                    markers += String.fromCharCode(65 + topSuf.indexOf(s));
+                    used.add(derived);
+                }
+            });
+            finalDict.push(w + markers);
+        });
+
+        // 3. Re-sort the compacted dictionary and N-prefix it
+        let res = (lim > 0 ? header : ""), prev = "";
+        finalDict.sort().map(w => {
+            let n = getCP(prev, w);
+            res += n + w.slice(n);
+            prev = w;
+        });
+        finish(res);
+    }
+
+    function finish(res) { $('encoded').value = res; $('eSize').innerText = res.length; }
+
+    function decV1() {
+        let d = [], p = "", s = $('encoded').value;
+        s.replace(/(\d+)([a-z]*)/g, (m, n, f) => d.push(p = p.slice(0, n) + f));
+        check(d);
+    }
+
+    function decV2() {
+        let d = [], p = "", raw = $('encoded').value;
+        let [h, b] = raw.split("\n\n");
+        let markers = {};
+        h.split(',').map(pair => { if(pair.includes('=')) { let [m, s] = pair.split('='); markers[m] = s; } });
+
+        b.replace(/(\d+)([a-zA-Z]*)/g, (m, n, f) => {
+            p = p.slice(0, n) + f;
+            // Separate root from markers
+            let root = p.replace(/[A-Z]/g, '');
+            let mks = p.match(/[A-Z]/g) || [];
+            d.push(root);
+            mks.map(m => d.push(root + markers[m]));
+        });
+        check(d);
+    }
+
+    const check = (d) => {
+        const ok = JSON.stringify([...d].sort()) === JSON.stringify([...words].sort());
+        $('dStatus').innerText = ok ? "✅ Integrities Match" : "❌ Error: Mismatch";
+        $('decoded').value = d.join(',');
+    };
+</script>
+</body>
+</html>
