@@ -28,3 +28,6 @@ New approaches:
 - prefix_remapped_shuffled.html:
 <br>same as above but with a more zip-friendly order for the dictionnay (see shuffler.html)
 <br>encoded json + RoadRoller.js + zip: 11.1kb (11335b)
+
+- we can now remove the letters that follow a "0" (already present in the remap string) and the initial 0 (unnecessary)
+<br>encoded json + RoadRoller.js + zip: 11.0kb (11312b)

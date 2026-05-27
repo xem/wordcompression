@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13k - Ultimate Encoder / Decoder (11312b Record Edition)</title>
+    <script src="words.js"></script>
+    <style>
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: var(--panel); border: 1px solid #30363d; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+        h1 { color: var(--accent); margin-top: 0; font-size: 24px; }
+        h2 { font-size: 18px; margin-top: 0; color: #f0f6fc; }
+        textarea { width: 100%; height: 180px; background: #010409; color: #7ee787; border: 1px solid #30363d; border-radius: 6px; font-family: monospace; font-size: 12px; padding: 10px; box-sizing: border-box; resize: vertical; }
+        button { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; }
+        button:hover { background: #2ea043; }
+        .btn-decode { background: #1f6feb; }
+        .btn-decode:hover { background: #388bfd; }
+        .metrics { display: flex; gap: 40px; margin-top: 15px; font-size: 14px; font-weight: 600; }
+        .metric-val { color: var(--accent); font-family: monospace; font-size: 16px; }
+        .status { font-weight: bold; font-size: 16px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Laboratoire JS13k : Optimisation 11312b (Omission du Premier 0 et des Têtes de Blocs)</h1>
+    
+    <div class="card">
+        <h2>1. Encodeur de Production</h2>
+        <button onclick="runEncoder()">Générer le Flux Record</button>
+        <div class="metrics">
+            <div>Mots d'origine dans words.js : <span id="lbl-original-count" class="metric-val">0</span></div>
+            <div>Taille du flux brut généré : <span id="lbl-encoded-size" class="metric-val">0</span> caractères</div>
+        </div>
+        <textarea id="txt-encoded-output" style="margin-top: 15px;" placeholder="Le flux compressé apparaîtra ici..."></textarea>
+    </div>
+
+    <div class="card">
+        <h2>2. Décodeur Intégré (Simulation de Runtime)</h2>
+        <button class="btn-decode" onclick="runDecoder()">Exécuter le Décodage et Valider</button>
+        <div class="metrics">
+            <div>Mots reconstruits à la volée : <span id="lbl-decoded-count" class="metric-val">0</span></div>
+        </div>
+        <div id="lbl-status" class="status"></div>
+    </div>
+</div>
+
+<script>
+    // Configuration gravée dans le marbre issues de tes optimisations successives
+    const MAP_ALPHABET = "esaoriltnudpcmyhgbkfwvzxjq";
+    const BLOCKS_ORDER  = "lrqhegnipvzktubmsxowcyjfda";
+
+    // --- LOGIQUE DE L'ENCODEUR ---
+    function runEncoder() {
+        if (typeof words === 'undefined') {
+            alert("Erreur : words.js n'est pas chargé ou ne contient pas la variable 'words'.");
+            return;
+        }
+
+        const remap = (word) => [...word].map(c => String.fromCharCode(97 + MAP_ALPHABET.indexOf(c))).join('');
+        const wordSet = new Set(words);
+        let used = new Set();
+        let remappedList = [];
+
+        // Étape 1 : Remap + Optimisation 9=s (Pluriels)
+        words.forEach(w => {
+            if (used.has(w)) return;
+            let marker = "";
+            if (wordSet.has(w + 's')) {
+                marker = "9";
+                used.add(w + 's');
+            }
+            remappedList.push(remap(w) + marker);
+        });
+
+        // Étape 2 : Tri lexicographique pour permettre le regroupement par préfixe
+        remappedList.sort();
+
+        // Étape 3 : Isolation des blocs par leur première lettre remappée
+        let blocks = {};
+        remappedList.forEach(w => {
+            let firstChar = w[0];
+            if (!blocks[firstChar]) blocks[firstChar] = [];
+            blocks[firstChar].push(w);
+        });
+
+        // Étape 4 : Assemblage du flux final avec omissions chirurgicales (Règles du Record 11312b)
+        let res = "";
+        let prev = "";
+        let isFirstGlobalWord = true;
+        const getCP = (a, b) => { let i=0; while(i<a.length && i<b.length && a[i]===b[i]) i++; return i; };
+
+        for (let char of BLOCKS_ORDER) {
+            let currentBlock = blocks[char] || [];
+            let isFirstOfBlock = true;
+
+            currentBlock.forEach(w => {
+                let n = getCP(prev, w);
+                
+                if (n === 0) {
+                    if (isFirstGlobalWord) {
+                        // RÈGLE 1 : On omet complètement le tout premier "0" initial du flux global
+                        // RÈGLE 2 : On omet aussi la première lettre du mot puisqu'elle équivaut à BLOCKS_ORDER[0]
+                        res += w.slice(1);
+                        isFirstGlobalWord = false;
+                    } else {
+                        // RÈGLE 2 (Changements de blocs suivants) : On garde le "0" comme séparateur,
+                        // mais on ampute la lettre qui suit immédiatement puisqu'elle est déductible via BLOCKS_ORDER
+                        res += "0" + w.slice(1);
+                    }
+                } else {
+                    // Structure classique pour le reste du bloc interne
+                    res += n + w.slice(n);
+                }
+                
+                prev = w;
+                isFirstOfBlock = false;
+            });
+        }
+
+        // Affichage des métriques de l'encodeur
+        document.getElementById('txt-encoded-output').value = res;
+        document.getElementById('lbl-encoded-size').innerText = res.length;
+        document.getElementById('lbl-original-count').innerText = words.length;
+    }
+
+    // --- LOGIQUE DU DÉCODEUR (Format Micro-code adapté pour ton jeu) ---
+    function runDecoder() {
+        const data = document.getElementById('txt-encoded-output').value;
+        if (!data) {
+            alert("Veuillez d'abord générer le flux encodé !");
+            return;
+        }
+
+        let decodedWords = [], p = "";
+        let blockIndex = 0;
+
+        // Étape régressive essentielle : On réinjecte virtuellement le "0" initial omis 
+        // pour que notre moteur de tokenisation traite le premier mot comme une bascule de bloc normale.
+        let sanitizedData = "0" + data;
+
+        // Regex magique modifiée : capture chaque chiffre "n" et son suffixe associé "s"
+        sanitizedData.replace(/(\d)([a-z9]*)/g, (_, n, s) => {
+            n = parseInt(n);
+
+            if (n === 0) {
+                // Si n === 0, on sait qu'on change de seau de lettre.
+                // On va chercher la lettre attendue dans notre BLOCKS_ORDER et on lui colle le suffixe amputé !
+                p = BLOCKS_ORDER[blockIndex++] + s;
+            } else {
+                // Comportement standard : On reprend la pile existante au niveau de l'index n + suffixe
+                p = p.slice(0, n) + s;
+            }
+            
+            // Extraction et traitement du marqueur de pluriel "9"
+            let hasPlural = p.includes('9');
+            let cleanWord = p.replace('9', '');
+            
+            // Inversion de la table de remappage fréquentiel pour réassigner les vraies lettres anglaises
+            let restored = [...cleanWord].map(c => MAP_ALPHABET[c.charCodeAt(0) - 97]).join('');
+            
+            decodedWords.push(restored);
+            if (hasPlural) decodedWords.push(restored + 's');
+        });
+
+        // --- PHASE DE VÉRIFICATION ET CONTRÔLE DE VALIDITÉ ---
+        document.getElementById('lbl-decoded-count').innerText = decodedWords.length;
+        
+        // Tri des deux listes pour comparer l'exactitude des sets
+        let originalSorted = [...words].sort();
+        let decodedSorted = [...decodedWords].sort();
+        
+        let isPerfect = originalSorted.length === decodedSorted.length && 
+                        originalSorted.every((val, i) => val === decodedSorted[i]);
+
+        const statusEl = document.getElementById('lbl-status');
+        if (isPerfect) {
+            statusEl.innerText = "✖ 100% VALIDE ET INTEGRE (Record validé !)";
+            statusEl.style.color = "#7ee787";
+        } else {
+            statusEl.innerText = "⚠️ COMPRESSION CORROMPUE (Écart détecté dans la reconstruction)";
+            statusEl.style.color = "#f85149";
+        }
+    }
+</script>
+</body>
+</html>
