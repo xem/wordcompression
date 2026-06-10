@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13k - Ultimate Encoder / Decoder (Full Omissions)</title>
+    <script src="words.js"></script>
+    <style>
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .card { background: var(--panel); border: 1px solid #30363d; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
+        textarea { width: 100%; height: 180px; background: #010409; color: #7ee787; border: 1px solid #30363d; border-radius: 6px; font-family: monospace; font-size: 12px; padding: 10px; box-sizing: border-box; resize: vertical; }
+        button { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+        button:hover { background: #2ea043; }
+        .metrics { display: flex; gap: 20px; margin-top: 10px; font-weight: bold; font-size: 14px; }
+        .highlight { color: var(--accent); }
+        h2 { margin-top: 0; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1 style="font-size: 24px; margin-bottom: 20px; color: #f0f6fc;">Pipeline d'Encodage Ultime — Omissions 0 & 1</h1>
+
+    <div class="card">
+        <h2>1. Encodeur Ultime (Génération du flux compressé)</h2>
+        <p style="font-size: 13px; color: #8b949e;">Intègre toutes les optimisations : Remap, Pluriels (9), Omission lettre après 0, et Omission prédictive de la 2ème lettre après 1 (avec exception sur 8).</p>
+        <button onclick="runEncoder()">Générer l'Output Encodé</button>
+        
+        <div class="metrics">
+            <div>Taille brute du flux : <span id="lbl-encoded-size" class="highlight">0</span> caractères</div>
+        </div>
+        <div style="margin-top: 15px;">
+            <label style="display:block; margin-bottom: 5px; font-size: 12px; color: #8b949e;">Flux de texte généré :</label>
+            <textarea id="txt-encoded-output" readonly placeholder="Le flux de texte condensé apparaîtra ici..."></textarea>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>2. Simulateur de Décodeur JS13k (Vérification)</h2>
+        <button onclick="runDecoder()" style="background: #1f6feb;">Lancer le Décodage de Test</button>
+        
+        <div class="metrics">
+            <div>Mots décodés : <span id="lbl-decoded-count" class="highlight">0</span> / <span id="lbl-original-count">0</span></div>
+            <div>Statut de l'intégrité : <span id="lbl-status">-</span></div>
+        </div>
+        <div style="margin-top: 15px;">
+            <label style="display:block; margin-bottom: 5px; font-size: 12px; color: #8b949e;">Échantillon des mots restaurés :</label>
+            <textarea id="txt-decoded-output" readonly placeholder="Les mots restaurés apparaîtront ici pour contrôle visuel..."></textarea>
+        </div>
+    </div>
+</div>
+
+<script>
+    const MAP_ALPHABET = "esaoriltnudpcmyhgbkfwvzxjq";
+    const BLOCKS_ORDER  = "lrqhegnipvzktubmsxowcyjfda";
+
+    // --- LOGIQUE DE L'ENCODEUR ---
+    function runEncoder() {
+        if (typeof words === 'undefined') return alert("Erreur : words.js introuvable.");
+
+        const remap = (word) => [...word].map(c => String.fromCharCode(97 + MAP_ALPHABET.indexOf(c))).join('');
+        const wordSet = new Set(words);
+        let used = new Set(), remappedList = [];
+
+        words.forEach(w => {
+            if (used.has(w)) return;
+            let marker = "";
+            if (wordSet.has(w + 's')) { marker = "9"; used.add(w + 's'); }
+            remappedList.push(remap(w) + marker);
+        });
+
+        remappedList.sort();
+
+        let blocks = {};
+        remappedList.forEach(w => {
+            if (!blocks[w[0]]) blocks[w[0]] = [];
+            blocks[w[0]].push(w);
+        });
+
+        let res = "", prev = "", expectedIdx = 0, currentSeq = "", isFirstGlobalWord = true;
+        const getCP = (a, b) => { let i=0; while(i<a.length && i<b.length && a[i]===b[i]) i++; return i; };
+
+        for (let char of BLOCKS_ORDER) {
+            let currentBlock = blocks[char] || [];
+            currentSeq = "acdfj".includes(char) ? "abcdefghijklmnopqrstuvwxyz" : "acdfjo";
+
+            currentBlock.forEach(w => {
+                let n = getCP(prev, w);
+                
+                if (n === 0) {
+                    // RÈGLE OMISSION ZERO : On ampute la première lettre
+                    if (isFirstGlobalWord) {
+                        res += w.slice(1);
+                        isFirstGlobalWord = false;
+                    } else {
+                        res += "0" + w.slice(1);
+                    }
+                    expectedIdx = 0;
+                    if (w[1]) {
+                        while(expectedIdx < currentSeq.length && currentSeq[expectedIdx] <= w[1]) expectedIdx++;
+                    }
+                } else if (n === 1) {
+                    // RÈGLE OMISSION UN : Séquence parfaite ou Exception 8
+                    if (expectedIdx < currentSeq.length && currentSeq[expectedIdx] === w[1]) {
+                        res += "1" + w.slice(2);
+                        expectedIdx++;
+                    } else {
+                        res += "8" + w.slice(1);
+                        expectedIdx = 0;
+                        while(expectedIdx < currentSeq.length && currentSeq[expectedIdx] <= w[1]) expectedIdx++;
+                    }
+                } else {
+                    res += n + w.slice(n);
+                }
+                prev = w;
+            });
+        }
+
+        document.getElementById('txt-encoded-output').value = res;
+        document.getElementById('lbl-encoded-size').innerText = res.length;
+        document.getElementById('lbl-original-count').innerText = words.length;
+        
+        // Petit log console pour compter les 8
+        console.log("Nombre de '8' générés :", (res.match(/8/g) || []).length);
+    }
+
+    // --- LOGIQUE DU DÉCODEUR (Intègre le tracking de la lettre 0 et 1) ---
+    function runDecoder() {
+        const data = document.getElementById('txt-encoded-output').value;
+        if (!data) return alert("Veuillez d'abord générer le flux encodé !");
+
+        let decodedWords = [], p = "", expectedIdx = 0, currentSeq = "", blockIndex = 0;
+        
+        // Injection virtuelle du 0 initial pour déclencher la bascule de bloc
+        let sanitizedData = "0" + data;
+
+        sanitizedData.replace(/(\d)([a-z9]*)/g, (_, n, s) => {
+            n = +n; 
+            
+            if (n === 0) { // Changement de bloc, on restaure la lettre 1 omise
+                p = BLOCKS_ORDER[blockIndex++] + s;
+                currentSeq = "acdfj".includes(p[0]) ? "abcdefghijklmnopqrstuvwxyz" : "acdfjo";
+                expectedIdx = 0;
+                if (p[1]) {
+                    while(currentSeq[expectedIdx] <= p[1]) expectedIdx++;
+                }
+            } else if (n === 1) { // 2ème lettre omise, on l'injecte
+                p = p[0] + currentSeq[expectedIdx++] + s;
+            } else if (n === 8) { // Exception, on inscrit la vraie lettre et on réaligne
+                p = p[0] + s;
+                expectedIdx = 0;
+                while(currentSeq[expectedIdx] <= s[0]) expectedIdx++;
+            } else { // Standard
+                p = p.slice(0, n) + s;
+            }
+            
+            let hasPlural = p.includes('9');
+            let cleanWord = p.replace('9', '');
+            let restored = [...cleanWord].map(c => MAP_ALPHABET[c.charCodeAt(0) - 97]).join('');
+            
+            decodedWords.push(restored);
+            if (hasPlural) decodedWords.push(restored + 's');
+        });
+
+        // --- CONTRÔLE ---
+        document.getElementById('lbl-decoded-count').innerText = decodedWords.length;
+        
+        let originalSorted = [...words].sort();
+        let decodedSorted = [...decodedWords].sort();
+        
+        let isPerfect = originalSorted.length === decodedSorted.length && 
+                        originalSorted.every((val, i) => val === decodedSorted[i]);
+
+        const statusEl = document.getElementById('lbl-status');
+        if (isPerfect) {
+            statusEl.innerText = "✖ 100% VALIDE ET INTEGRE";
+            statusEl.style.color = "#7ee787";
+        } else {
+            statusEl.innerText = "⚠️ COMPRESSION CORROMPUE";
+            statusEl.style.color = "#f85149";
+        }
+
+        document.getElementById('txt-decoded-output').value = decodedSorted.slice(0, 300).join(', ') + "...";
+    }
+</script>
+</body>
+</html>

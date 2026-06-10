@@ -1,0 +1,384 @@
+<!doctype html>
+<script src=words.js></script>
+<script src="jszip.min.js"></script>
+<script src="zopfli/libzopfli.js"></script>
+<script src="zopfli/compress.js"></script>
+<script src="zopfli/byte-b64.js"></script>
+
+<title>JS13k dico lab</title>
+<h3>JS13k dico lab</h3>
+
+<p><label><b>Words</b></label><input id=i1> <span id=s1></span>
+<p><label><input type=checkbox id=c2>2: Shuffled</label><input id=i2> <span id=s2></span>
+<p><label><input type=checkbox checked id=c3>3: "9" = "+s"</label><input id=i3> <span id=s3></span>
+<p><label><input type=checkbox checked id=c4>4: "+" = suffix</label><input id=i4> <span id=s4></span>
+<p><label><input type=checkbox checked disabled id=c5>5: N + suffix (mandatory)</label><input id=i5> <span id=s5></span>
+<p><label><input type=checkbox checked id=c6>6: omit "+" after "9"</label><input id=i6> <span id=s6></span>
+<p><label><input type=radio name=c7 id=c7>7a: omit N = 4 while length = 5</label><input id=i7> <span id=s7></span>
+<p><label><input type=radio name=c7 id=c7b>7b: omit N = Nprev while length = 5</label><input id=i7b> <span id=s7b></span>
+<p><label><input type=radio name=c7 id=c7c checked>7c: never omit N</label><input id=i7c> <span id=s7c></span>
+<p><label><input type=checkbox checked id=c8>8: omit letter after "0"</label><input id=i8> <span id=s8></span>
+<p><label><input type=checkbox id=c9>9: Remapped</label><input id=i9> <span id=s9></span>
+<p><label><b>Encoded</b></label><input id=i96> <span id=s96></span>
+<p><label><input type=radio name=hard id=c97 checked>Roadrolled + zipped</label><input id=i97> <span id=s97></span>
+<p><label><input type=radio name=hard id=c98>Roadrolled hard + zipped</label><input id=i98> <span id=s98></span>
+<p><label><b>Decoded</b></label><input id=i99> <span id=s99></span>
+<p><button id=go>GO</button>
+
+
+<style>
+body { font-family: arial; }
+input:not([type=checkbox]):not([type=radio]) { width: 500px; }
+label { display: inline-block; width: 280px; }
+</style>
+
+<script type=module defer>
+// Roadroller setup
+import { ResourcePool, Packer } from "./rr/index.js"; 
+const resourcePool = new ResourcePool();
+
+go.onclick = () => {
+
+// data (carried from step to step)
+var data = "";
+
+// tmp
+var words2 = JSON.parse(JSON.stringify(words))//.slice(0,200);
+
+// 1: Words
+i1.value = words2;
+s1.innerHTML = i1.value.length + " bytes";
+data = words2;
+
+// 2: shuffle
+var arr = [];
+const BLOCKS_ORDER  = "lrqhegnipvzktubmsxowcyjfda";
+if(c2.checked){
+  for(var i in BLOCKS_ORDER){
+    for(var j in data){
+      if(data[j].startsWith(BLOCKS_ORDER[i])){
+        arr.push(data[j]);
+      }
+    }
+  }
+  i2.value = arr;
+  s2.innerHTML = i2.value.length + " bytes";
+  data = arr;
+}
+else {
+  i2.value = "";
+  s2.innerHTML = "";
+}
+
+// full words backup
+var fullwords = [];
+for(i = 0; i < data.length; i++){
+  fullwords.push(data[i]);
+}
+console.log(fullwords);
+
+// 3: 9 = +s
+var arr3 = [];
+
+if(c3.checked){
+  for(i = 0; i < data.length; i++){
+    arr3.push(data[i]);
+    for(j = i+1; j < data.length; j++){
+      if(data[j] == data[i]+"s"){
+        arr3.push("9");
+        data.splice(j,1);
+      }
+    }
+  }
+  i3.value = arr3;
+  s3.innerHTML = arr3.join("").length + " bytes";
+  data = arr3;
+
+  fullwords = [];
+  for(i = 0; i < data.length; i++){
+    fullwords.push(data[i]);
+  }
+  //console.log(fullwords);
+}
+else {
+  i3.value = "";
+  s3.innerHTML = "";
+}
+
+
+// 4: + = suffix
+var arr4 = [];
+if(c4.checked){
+  for(i = 0; i < data.length; i++){
+    if(data[i].startsWith(data[i-1])){
+      arr4.push(data[i].replace(data[i-1], "+"));
+    }
+    else if(data[i-1] == "9" && data[i].startsWith(data[i-2])){
+      arr4.push(data[i].replace(data[i-2], "+"));
+    }
+    else arr4.push(data[i]);
+  }
+  i4.value = arr4;
+  s4.innerHTML = arr4.join("").length + " bytes";
+  data = arr4;
+}
+else {
+  i4.value = "";
+  s4.innerHTML = "";
+}
+
+// 5: N + suffix (when words don't start with +)
+var arr5 = [];
+if(c5.checked){
+  for(i = 0; i < data.length; i++){
+    if(data[i] == "9" || data[i].startsWith("+")){
+      arr5.push(data[i]);
+    }
+    else {
+      var lastword = fullwords[i-1] || "";
+      if(lastword == "9"){
+        lastword = fullwords[i-2];
+      }
+      var prefixlength = 0;
+      //if(i < 100)console.log(data[i], lastword)
+      for(j = 0; j < 4; j++){
+        if(lastword[j] == data[i][j]){
+          prefixlength++;
+        }
+        else break;
+      }
+      if(i == 0) prefixlength="";
+      arr5.push(prefixlength + data[i].slice(prefixlength));
+    }
+  }
+  i5.value = arr5;
+  s5.innerHTML = arr5.join("").length + " bytes";
+  data = arr5;
+}
+
+
+// 6: omit + after 9
+var arr6 = [];
+if(c6.checked){
+  for(i = 0; i < data.length; i++){
+    if(data[i-1] == "9" && data[i].startsWith("+")){
+      arr6.push(data[i].replace("+", ""));
+    }
+    else arr6.push(data[i]);
+  }
+  i6.value = arr6;
+  s6.innerHTML = arr6.join("").length + " bytes";
+  data = arr6;
+}
+else {
+  i6.value = "";
+  s6.innerHTML = "";
+}
+
+
+
+// 7a: omit n=4 when prev length = 5
+var arr7 = [];
+if(c7.checked){
+  for(i = 0; i < data.length; i++){
+    if(i > 0 && fullwords[i-1].length == 5 && data[i].startsWith("4")){
+      arr7.push(data[i].replace("4", ""));
+    }
+    else {
+      arr7.push(data[i]);
+    }
+  }
+  i7.value = arr7;
+  s7.innerHTML = arr7.join("").length + " bytes";
+  data = arr7;
+}
+else {
+  i7.value = "";
+  s7.innerHTML = "";
+}
+
+// 7b: omit n=nprev when length = 5
+var arr7b = [];
+if(c7b.checked){
+  for(i = 0; i < data.length; i++){
+    if(i > 0 && fullwords[i-1].length == 5 && data[i].startsWith(data[i-1][0])){
+      arr7b.push(data[i].replace(data[i-1][0], ""));
+    }
+    else {
+      arr7b.push(data[i]);
+    }
+  }
+  i7b.value = arr7b;
+  s7b.innerHTML = arr7b.join("").length + " bytes";
+  data = arr7b;
+}
+else {
+  i7b.value = "";
+  s7b.innerHTML = "";
+}
+
+// 7c: no omit n
+var arr7c = [];
+if(c7c.checked){
+  for(i = 0; i < data.length; i++){
+      arr7c.push(data[i]);
+  }
+  i7c.value = arr7c;
+  s7c.innerHTML = arr7c.join("").length + " bytes";
+  data = arr7c;
+}
+else {
+  i7c.value = "";
+  s7c.innerHTML = "";
+}
+
+// 8: omit letter after a 0
+var arr8 = [];
+if(c8.checked){
+  for(i = 0; i < data.length; i++){
+    if(data[i].startsWith("0")){
+      arr8.push("0" + data[i].slice(2));
+    }
+    else {
+      arr8.push(data[i]);
+    }
+  }
+  i8.value = arr8;
+  s8.innerHTML = arr8.join("").length + " bytes";
+  data = arr8;
+}
+else {
+  i8.value = "";
+  s8.innerHTML = "";
+}
+
+// 9: remap 
+const MAP_ALPHABET = "esaoriltnudpcmyhgbkfwvzxjq";
+if(c9.checked){
+  for(i in data){
+    data[i] = data[i].replace(/[a-z]/g, a=>String.fromCharCode(97 + MAP_ALPHABET.indexOf(a)));
+  }
+  i9.value = data;
+  s9.innerHTML = i9.value.replaceAll(",","").length + " bytes";
+}
+else {
+  i9.value = "";
+  s9.innerHTML = "";
+}
+
+// 96: encoded
+i96.value = data = data.join("");
+s96.innerHTML = i96.value.length + " bytes";
+
+i97.value = "rolling...";
+s97.innerHTML = "";
+i98.value = "zipping...";
+s98.innerHTML = "";
+
+// 99: Decoded
+var encoded = i96.value;
+encoded = encoded.split(",");
+
+// unremap
+if(c9.checked){
+  for(i in encoded){
+    encoded[i] = encoded[i].replace(/./g, a=>MAP_ALPHABET[a.charCodeAt(0)-97]);
+  }
+}
+encoded.sort();
+//i99.value = encoded;
+s99.innerHTML = i99.value.length + " bytes";
+if(i99.value == i1.value) s99.innerHTML += " (OK!)";
+else s99.innerHTML += " (KO!)";
+
+// async (roadroll + zip)
+(async () => {
+
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  if(c97.checked || c98.checked){
+  
+    // 97: roadroll
+    const inputs = [ { data: i96.value, type: 'text', action: 'write' } ];
+    const packer = new Packer(inputs, { resourcePool });
+    await packer.optimize(c98.checked ? 2 : null); 
+    const { firstLine, secondLine } = packer.makeDecoder();
+    i97.value = firstLine + secondLine;
+    s97.innerHTML = i97.value.length + " bytes";
+  }
+  else {
+    i97.value = "";
+    s97.innerHTML = "";
+  }
+
+  // 98: zipped
+  const z = window.Module;
+  function ensureByteBuffer(input) {
+    if (typeof input === 'string') {
+      const a = z.intArrayFromString(input);
+      a.length--; // because emscripten's intArrayFromString() adds trailing nul
+      return a;
+    } else if (Array.isArray(input)) {
+      return Uint8Array.from(input);
+    } else {
+      return input;
+    }
+  }
+
+  const defaultOptions = {
+    verbose: false,
+    verbose_more: false,
+    numiterations: 15,
+    blocksplitting: true,
+    blocksplittingmax: 15,
+  };
+
+  function compress(input, format, options) {
+    console.assert(input != null, "buffer must not be null");
+    console.assert(options != null, "options must not be null");
+
+    const byteBuffer = ensureByteBuffer(input);
+    const bufferPtr = z.allocate(byteBuffer, 'i8', z.ALLOC_NORMAL);
+
+    const opts = { ...defaultOptions, ...options };
+
+    const output = z._createZopfliJsOutput();
+    z._compress(bufferPtr, byteBuffer.length, output,
+      format,
+      opts.verbose,
+      opts.verbose_more,
+      opts.numiterations,
+      opts.blocksplitting,
+      opts.blocksplittingmax,
+    );
+
+    const outputPtr = z._getBuffer(output);
+    const outputSize = z._getBufferSize(output);
+
+    const result = z.HEAPU8.slice(outputPtr, outputPtr + outputSize);
+    z._deallocate(outputPtr);
+    z._deallocate(output);
+    z._deallocate(bufferPtr);
+
+    return result;
+  }
+
+  if(c97.checked || c98.checked){
+    var inflated = (new TextEncoder()).encode(c97.checked ? i97.value : i96.value);
+    var deflated = compress(inflated, 2, defaultOptions);
+    var zipzop = makeZip("index.html", inflated, deflated);
+    var decoder = new TextDecoder('utf8');
+    var zipzop64 = bytesToBase64(zipzop);
+    i98.value = zipzop64;
+    s98.innerHTML = zipzop.length + " bytes";
+  }
+  else {
+    i98.value = "";
+    s98.innerHTML = "";
+  }
+
+})();
+
+}
+
+</script>
