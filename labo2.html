@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13k Dico Lab - Encoder</title>
+    <!-- Chargement de l'array de mots -->
+    <script src="3-5.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f4f4f9; }
+        textarea { width: 100%; height: 300px; font-family: monospace; margin-top: 10px; padding: 10px; }
+        button { padding: 10px 20px; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Encodage du Dictionnaire (3-5 lettres)</h1>
+    <button onclick="compresser()">Lancer la compression</button>
+    <p id="stats"></p>
+    <textarea id="output" placeholder="Le dictionnaire compressé apparaîtra ici..."></textarea>
+
+    <script>
+        function compresser() {
+            if (typeof words === 'undefined') {
+                alert("L'array 'words' n'est pas chargé !");
+                return;
+            }
+
+            // 1. Préparation des items (regroupement des pluriels)
+            let items = [];
+            for (let i = 0; i < words.length; i++) {
+                let w = words[i];
+                if (i < words.length - 1 && words[i+1] === w + 's') {
+                    items.push({ word: w, hasPlural: true });
+                    i++; // On saute le pluriel puisqu'il est géré par '9'
+                } else {
+                    items.push({ word: w, hasPlural: false });
+                }
+            }
+
+            // 2. Programmation Dynamique pour trouver le chemin d'encodage optimal
+            // dp[i] contient le coût minimal pour encoder les items de 0 à i
+            let dp = new Array(items.length + 1);
+            dp[0] = { cost: 0, lastWord: "", chunks: [] };
+
+            for (let i = 1; i <= items.length; i++) {
+                dp[i] = { cost: Infinity };
+                // On regarde en arrière jusqu'à 150 mots (suffisant pour trouver les préfixes communs)
+                let min_j = Math.max(0, i - 150);
+
+                for (let j = i - 1; j >= min_j; j--) {
+                    let prev = dp[j];
+                    let chunk = items.slice(j, i);
+
+                    // Chercher les longueurs de préfixes N valides (de 0 à 4)
+                    let maxN = Math.min(4, prev.lastWord.length);
+                    let validNs = [];
+                    for (let N = 0; N <= maxN; N++) {
+                        let prefix = prev.lastWord.substring(0, N);
+                        let isOk = true;
+                        for (let item of chunk) {
+                            if (!item.word.startsWith(prefix)) {
+                                isOk = false;
+                                break;
+                            }
+                        }
+                        if (isOk) validNs.push(N);
+                    }
+
+                    // Evaluer le coût pour chaque N valide
+                    for (let N of validNs) {
+                        let fives = [];
+                        let others = [];
+                        
+                        // Séparation : les 5 lettres en premier
+                        for (let item of chunk) {
+                            if (item.word.length === 5) fives.push(item);
+                            else others.push(item);
+                        }
+
+                        // Construction de la chaîne pour ce groupe
+                        // On omet le 0 si on est au tout premier mot (comme aah9)
+                        let str = (j === 0 && N === 0) ? "" : N.toString();
+                        
+                        for (let item of fives) {
+                            str += item.word.substring(N);
+                        }
+                        
+                        for (let k = 0; k < others.length; k++) {
+                            let item = others[k];
+                            str += item.word.substring(N);
+                            if (item.hasPlural) {
+                                str += "9"; // Le '9' délimite naturellement
+                            } else if (k < others.length - 1) {
+                                str += ","; // Virgule si suivi d'un autre suffixe < 5 lettres
+                            }
+                        }
+
+                        let cost = prev.cost + str.length;
+                        
+                        // Si c'est le meilleur chemin trouvé jusqu'à présent
+                        if (cost < dp[i].cost) {
+                            let lastWord = "";
+                            if (others.length > 0) {
+                                let last = others[others.length - 1];
+                                lastWord = last.hasPlural ? last.word + 's' : last.word;
+                            } else {
+                                lastWord = fives[fives.length - 1].word;
+                            }
+
+                            dp[i] = {
+                                cost: cost,
+                                lastWord: lastWord,
+                                best_j: j,
+                                encoded: str
+                            };
+                        }
+                    }
+                }
+            }
+
+            // 3. Remontée du chemin pour construire la string finale
+            let result = [];
+            let curr = items.length;
+            while (curr > 0) {
+                let step = dp[curr];
+                result.push(step.encoded);
+                curr = step.best_j;
+            }
+            result.reverse();
+            
+            let finalStr = result.join("");
+
+            document.getElementById('output').value = finalStr;
+            document.getElementById('stats').innerText = 
+                `Mots originaux : ${words.length} | Taille de l'encodage : ${finalStr.length} caractères (Ratio : ${((finalStr.length / words.join("").length) * 100).toFixed(2)}%)`;
+        }
+    </script>
+</body>
+</html>

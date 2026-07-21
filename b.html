@@ -2,187 +2,266 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>JS13k - Ultimate Encoder / Decoder (Full Omissions)</title>
+    <title>JS13k - Pipeline Roadroller sans Remap (Alphabet Naturel)</title>
     <script src="words.js"></script>
     <style>
-        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --text: #c9d1d9; }
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #238636; --text: #c9d1d9; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
-        .container { max-width: 1000px; margin: 0 auto; }
+        .container { max-width: 1200px; margin: 0 auto; }
         .card { background: var(--panel); border: 1px solid #30363d; border-radius: 6px; padding: 20px; margin-bottom: 20px; }
-        textarea { width: 100%; height: 180px; background: #010409; color: #7ee787; border: 1px solid #30363d; border-radius: 6px; font-family: monospace; font-size: 12px; padding: 10px; box-sizing: border-box; resize: vertical; }
-        button { background: #238636; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
-        button:hover { background: #2ea043; }
-        .metrics { display: flex; gap: 20px; margin-top: 10px; font-weight: bold; font-size: 14px; }
-        .highlight { color: var(--accent); }
-        h2 { margin-top: 0; font-size: 18px; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        textarea { width: 100%; height: 180px; background: #010409; color: #7ee787; border: 1px solid #30363d; border-radius: 6px; font-family: monospace; font-size: 12px; padding: 10px; box-sizing: border-box; }
+        button { background: #8b5cf6; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        button:disabled { background: #21262d; color: #8b949e; cursor: not-allowed; }
+        .log { background: #010409; border: 1px solid #30363d; padding: 15px; height: 350px; overflow-y: auto; font-size: 13px; color: #58a6ff; font-family: monospace; }
+        .metrics { display: flex; gap: 20px; margin-top: 10px; font-weight: bold; }
+        .highlight { color: #7ee787; font-size: 18px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1 style="font-size: 24px; margin-bottom: 20px; color: #f0f6fc;">Pipeline d'Encodage Ultime — Omissions 0 & 1</h1>
+    <h1 style="font-size: 24px; margin-bottom: 20px; color: #f0f6fc;">Pipeline Spécifique Roadroller — Alphabet Naturel (Sans Remap)</h1>
 
     <div class="card">
-        <h2>1. Encodeur Ultime (Génération du flux compressé)</h2>
-        <p style="font-size: 13px; color: #8b949e;">Intègre toutes les optimisations : Remap, Pluriels (9), Omission lettre après 0, et Omission prédictive de la 2ème lettre après 1 (avec exception sur 8).</p>
-        <button onclick="runEncoder()">Générer l'Output Encodé</button>
+        <h2>Optimiseur de Contextes PAQ — Alignement sur Alphabet d'Origine</h2>
+        <p style="font-size: 13px; color: #8b949e;">Cette version conserve l'alphabet <code>a-z</code> naturel pour préserver la proximité sémantique des mots d'origine. Elle cherche l'agencement des sous-branches qui minimise l'entropie locale de Roadroller.</p>
+        <button id="btn-start" onclick="startRoadrollerOptimization()">Lancer l'Optimisation de Contexte</button>
+        <button id="btn-stop" onclick="stopOptimization()" disabled style="background:#da3637;">Arrêter et Figer</button>
         
         <div class="metrics">
-            <div>Taille brute du flux : <span id="lbl-encoded-size" class="highlight">0</span> caractères</div>
-        </div>
-        <div style="margin-top: 15px;">
-            <label style="display:block; margin-bottom: 5px; font-size: 12px; color: #8b949e;">Flux de texte généré :</label>
-            <textarea id="txt-encoded-output" readonly placeholder="Le flux de texte condensé apparaîtra ici..."></textarea>
+            <div>Score d'Entropie Roadroller : <span id="lbl-entropy" class="highlight">Calcul...</span> <span style="font-size:11px; color:#8b949e;">(Plus bas = Meilleur alignement pour les modèles PAQ)</span></div>
         </div>
     </div>
 
-    <div class="card">
-        <h2>2. Simulateur de Décodeur JS13k (Vérification)</h2>
-        <button onclick="runDecoder()" style="background: #1f6feb;">Lancer le Décodage de Test</button>
-        
-        <div class="metrics">
-            <div>Mots décodés : <span id="lbl-decoded-count" class="highlight">0</span> / <span id="lbl-original-count">0</span></div>
-            <div>Statut de l'intégrité : <span id="lbl-status">-</span></div>
+    <div class="grid">
+        <div class="card">
+            <h2>Console d'Alignement Sémantique</h2>
+            <div id="log-output" class="log">Prêt...<br></div>
         </div>
-        <div style="margin-top: 15px;">
-            <label style="display:block; margin-bottom: 5px; font-size: 12px; color: #8b949e;">Échantillon des mots restaurés :</label>
-            <textarea id="txt-decoded-output" readonly placeholder="Les mots restaurés apparaîtront ici pour contrôle visuel..."></textarea>
+        <div class="card">
+            <h2>Flux de Sortie (Prêt pour Roadroller)</h2>
+            <textarea id="txt-encoded-output" readonly placeholder="Le flux optimisé apparaîtra ici..."></textarea>
         </div>
     </div>
 </div>
 
 <script>
-    const MAP_ALPHABET = "esaoriltnudpcmyhgbkfwvzxjq";
-    const BLOCKS_ORDER  = "lrqhegnipvzktubmsxowcyjfda";
+    // Configuration de l'ordre racine de tes blocs N=0 (Basé sur l'alphabet natif)
+    const BLOCKS_ORDER = "abcdefghijklmnopqrstuvwxyz";
 
-    // --- LOGIQUE DE L'ENCODEUR ---
-    function runEncoder() {
-        if (typeof words === 'undefined') return alert("Erreur : words.js introuvable.");
+    let isRunning = false;
+    let bestEntropy = Infinity;
+    let globalTrie = {};
+    let currentOrders = {};
+    let allPrefixesList = [];
 
-        const remap = (word) => [...word].map(c => String.fromCharCode(97 + MAP_ALPHABET.indexOf(c))).join('');
+    const logEl = document.getElementById('log-output');
+    const entropyEl = document.getElementById('lbl-entropy');
+    const encodedEl = document.getElementById('txt-encoded-output');
+    const btnStart = document.getElementById('btn-start');
+    const btnStop = document.getElementById('btn-stop');
+
+    function log(msg) { logEl.innerHTML += msg + "<br>"; logEl.scrollTop = logEl.scrollHeight; }
+    
+    function stopOptimization() { 
+        isRunning = false; 
+        btnStart.disabled = false; 
+        btnStop.disabled = true; 
+        log("<br><b style='color:#7ee787'>[!] Structure figée. Exécution de la contre-vérification du décodeur...</b>"); 
+        runDecoderVerification();
+    }
+
+    // --- SIMULATEUR DE COMPRESSION DE CONTEXTE ROADROLLER (PAQ) ---
+    function calculateRoadrollerEntropy(text) {
+        let contexts = {};
+        let totalTransitions = 0;
+
+        for (let i = 2; i < text.length; i++) {
+            // Analyse de la stabilité sur un historique de 2 caractères
+            let ctx = text.substring(i - 2, i);
+            let char = text[i];
+
+            if (!contexts[ctx]) contexts[ctx] = { total: 0, chars: {} };
+            if (!contexts[ctx].chars[char]) contexts[ctx].chars[char] = 0;
+
+            contexts[ctx].chars[char]++;
+            contexts[ctx].total++;
+            totalTransitions++;
+        }
+
+        let entropy = 0;
+        for (let ctx in contexts) {
+            let cData = contexts[ctx];
+            for (let char in cData.chars) {
+                let p = cData.chars[char] / cData.total;
+                entropy -= p * Math.log2(p) * cData.total;
+            }
+        }
+        return entropy;
+    }
+
+    // --- CONSTRUCTEUR DE L'ARBRE (SANS LAYER DE REMAP) ---
+    function buildBaseTrie() {
+        globalTrie = {};
+        currentOrders = {};
+        allPrefixesList = [];
+
         const wordSet = new Set(words);
-        let used = new Set(), remappedList = [];
+        let used = new Set();
+        let cleanedList = [];
 
+        // Étape 1 : Séparation des pluriels automatiques (Marqueur 9) sur les vrais mots
         words.forEach(w => {
             if (used.has(w)) return;
             let marker = "";
-            if (wordSet.has(w + 's')) { marker = "9"; used.add(w + 's'); }
-            remappedList.push(remap(w) + marker);
+            if (wordSet.has(w + 's')) {
+                marker = "9";
+                used.add(w + 's');
+            }
+            cleanedList.push(w + marker);
         });
 
-        remappedList.sort();
-
-        let blocks = {};
-        remappedList.forEach(w => {
-            if (!blocks[w[0]]) blocks[w[0]] = [];
-            blocks[w[0]].push(w);
+        // Étape 2 : Injection dans l'arbre lexicographique natif
+        cleanedList.forEach(w => {
+            let current = globalTrie;
+            for (let i = 0; i < w.length; i++) {
+                let char = w[i];
+                if (char === '9') { current['$has9'] = true; break; }
+                if (!current[char]) current[char] = {};
+                current = current[char];
+            }
+            current['$end'] = true;
         });
 
-        let res = "", prev = "", expectedIdx = 0, currentSeq = "", isFirstGlobalWord = true;
-        const getCP = (a, b) => { let i=0; while(i<a.length && i<b.length && a[i]===b[i]) i++; return i; };
-
-        for (let char of BLOCKS_ORDER) {
-            let currentBlock = blocks[char] || [];
-            currentSeq = "acdfj".includes(char) ? "abcdefghijklmnopqrstuvwxyz" : "acdfjo";
-
-            currentBlock.forEach(w => {
-                let n = getCP(prev, w);
-                
-                if (n === 0) {
-                    // RÈGLE OMISSION ZERO : On ampute la première lettre
-                    if (isFirstGlobalWord) {
-                        res += w.slice(1);
-                        isFirstGlobalWord = false;
-                    } else {
-                        res += "0" + w.slice(1);
-                    }
-                    expectedIdx = 0;
-                    if (w[1]) {
-                        while(expectedIdx < currentSeq.length && currentSeq[expectedIdx] <= w[1]) expectedIdx++;
-                    }
-                } else if (n === 1) {
-                    // RÈGLE OMISSION UN : Séquence parfaite ou Exception 8
-                    if (expectedIdx < currentSeq.length && currentSeq[expectedIdx] === w[1]) {
-                        res += "1" + w.slice(2);
-                        expectedIdx++;
-                    } else {
-                        res += "8" + w.slice(1);
-                        expectedIdx = 0;
-                        while(expectedIdx < currentSeq.length && currentSeq[expectedIdx] <= w[1]) expectedIdx++;
-                    }
-                } else {
-                    res += n + w.slice(n);
-                }
-                prev = w;
-            });
+        // Étape 3 : Référencement récursif des sous-intersections
+        function registerOrders(node, prefix) {
+            let children = Object.keys(node).filter(k => k !== '$end' && k !== '$has9').sort();
+            if (children.length > 0) {
+                currentOrders[prefix] = children;
+                allPrefixesList.push(prefix);
+                children.forEach(c => registerOrders(node[c], prefix + c));
+            }
         }
 
-        document.getElementById('txt-encoded-output').value = res;
-        document.getElementById('lbl-encoded-size').innerText = res.length;
-        document.getElementById('lbl-original-count').innerText = words.length;
-        
-        // Petit log console pour compter les 8
-        console.log("Nombre de '8' générés :", (res.match(/8/g) || []).length);
+        // Initialisation racine N=0
+        currentOrders[""] = [...BLOCKS_ORDER];
+        BLOCKS_ORDER.split('').forEach(char => {
+            if (globalTrie[char]) registerOrders(globalTrie[char], char);
+        });
     }
 
-    // --- LOGIQUE DU DÉCODEUR (Intègre le tracking de la lettre 0 et 1) ---
-    function runDecoder() {
-        const data = document.getElementById('txt-encoded-output').value;
-        if (!data) return alert("Veuillez d'abord générer le flux encodé !");
+    // --- ENCODAGE DU FLUX COULÉ ---
+    function flattenTrieToPipelineString() {
+        let res = "";
+        let prev = "";
+        const getCP = (a, b) => { let i=0; while(i<a.length && i<b.length && a[i]===b[i]) i++; return i; };
 
-        let decodedWords = [], p = "", expectedIdx = 0, currentSeq = "", blockIndex = 0;
-        
-        // Injection virtuelle du 0 initial pour déclencher la bascule de bloc
-        let sanitizedData = "0" + data;
-
-        sanitizedData.replace(/(\d)([a-z9]*)/g, (_, n, s) => {
-            n = +n; 
-            
-            if (n === 0) { // Changement de bloc, on restaure la lettre 1 omise
-                p = BLOCKS_ORDER[blockIndex++] + s;
-                currentSeq = "acdfj".includes(p[0]) ? "abcdefghijklmnopqrstuvwxyz" : "acdfjo";
-                expectedIdx = 0;
-                if (p[1]) {
-                    while(currentSeq[expectedIdx] <= p[1]) expectedIdx++;
-                }
-            } else if (n === 1) { // 2ème lettre omise, on l'injecte
-                p = p[0] + currentSeq[expectedIdx++] + s;
-            } else if (n === 8) { // Exception, on inscrit la vraie lettre et on réaligne
-                p = p[0] + s;
-                expectedIdx = 0;
-                while(currentSeq[expectedIdx] <= s[0]) expectedIdx++;
-            } else { // Standard
-                p = p.slice(0, n) + s;
+        function traverse(node, currentPrefix) {
+            if (node['$end']) {
+                let w = currentPrefix;
+                if (node['$has9']) w += '9';
+                let n = getCP(prev, w);
+                res += n + w.slice(n);
+                prev = w;
             }
-            
+            let order = currentOrders[currentPrefix] || [];
+            order.forEach(char => { if (node[char]) traverse(node[char], currentPrefix + char); });
+        }
+
+        currentOrders[""].forEach(char => { if (globalTrie[char]) traverse(globalTrie[char], char); });
+        return res;
+    }
+
+    // --- BOUCLE EXECUTIVE ---
+    async function startRoadrollerOptimization() {
+        if (typeof words === 'undefined') return alert("words.js est introuvable.");
+
+        isRunning = true;
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+        logEl.innerHTML = "";
+
+        log("<b>[1] Analyse de l'arbre sémantique basé sur l'alphabet naturel...</b>");
+        buildBaseTrie();
+
+        let currentStr = flattenTrieToPipelineString();
+        bestEntropy = calculateRoadrollerEntropy(currentStr);
+
+        entropyEl.innerText = bestEntropy.toFixed(2);
+        encodedEl.value = currentStr;
+
+        log(`Entropie initiale (Sans remap) : <b>${bestEntropy.toFixed(2)}</b>`);
+        log("<br><b>[2] Démarrage de l'alignement contextuel profond...</b><br>");
+
+        let cycle = 0;
+
+        async function loop() {
+            if (!isRunning) return;
+            cycle++;
+
+            let randomPrefix = allPrefixesList[Math.floor(Math.random() * allPrefixesList.length)];
+            if (!randomPrefix) { setTimeout(loop, 0); return; }
+
+            let branch = currentOrders[randomPrefix];
+            if (!branch || branch.length <= 1) { setTimeout(loop, 0); return; }
+
+            let originalBranchState = [...branch];
+
+            // Mutation par permutation d'enchaînement de feuilles
+            let i = Math.floor(Math.random() * branch.length);
+            let j = Math.floor(Math.random() * branch.length);
+            if (i !== j) [branch[i], branch[j]] = [branch[j], branch[i]];
+
+            let testStr = flattenTrieToPipelineString();
+            let testEntropy = calculateRoadrollerEntropy(testStr);
+
+            if (testEntropy < bestEntropy) {
+                bestEntropy = testEntropy;
+                entropyEl.innerText = bestEntropy.toFixed(2) + ` (Cycle ${cycle})`;
+                encodedEl.value = testStr;
+                log(`⚡ [Cycle ${cycle}] Alignement optimal sur [${randomPrefix}]. Entropie : <b style='color:#7ee787'>${bestEntropy.toFixed(2)}</b>`);
+            } else {
+                // Rollback immédiat pour préserver le contexte prédictif stable
+                currentOrders[randomPrefix] = originalBranchState;
+            }
+
+            if (cycle % 4000 === 0) {
+                entropyEl.innerText = bestEntropy.toFixed(2) + ` (Analyse en cours : ${cycle})`;
+            }
+
+            setTimeout(loop, 0);
+        }
+
+        loop();
+    }
+
+    // --- SÉCURITÉ : VÉRIFICATION SANS PROFIL DE REMAP ---
+    function runDecoderVerification() {
+        const data = encodedEl.value;
+        let decodedWords = [], p = "";
+        
+        // Le décodeur natif ultra-light de ton jeu (sans la table MAP_ALPHABET à gérer !)
+        data.replace(/(\d)([a-z9]*)/g, (_, n, s) => {
+            p = p.slice(0, n) + s;
             let hasPlural = p.includes('9');
-            let cleanWord = p.replace('9', '');
-            let restored = [...cleanWord].map(c => MAP_ALPHABET[c.charCodeAt(0) - 97]).join('');
+            let restored = p.replace('9', '');
             
             decodedWords.push(restored);
             if (hasPlural) decodedWords.push(restored + 's');
         });
 
-        // --- CONTRÔLE ---
-        document.getElementById('lbl-decoded-count').innerText = decodedWords.length;
-        
         let originalSorted = [...words].sort();
         let decodedSorted = [...decodedWords].sort();
         
-        let isPerfect = originalSorted.length === decodedSorted.length && 
-                        originalSorted.every((val, i) => val === decodedSorted[i]);
-
-        const statusEl = document.getElementById('lbl-status');
+        let isPerfect = originalSorted.length === decodedSorted.length && originalSorted.every((v, idx) => v === decodedSorted[idx]);
         if (isPerfect) {
-            statusEl.innerText = "✖ 100% VALIDE ET INTEGRE";
-            statusEl.style.color = "#7ee787";
+            log("<br><span style='color:#7ee787; font-weight:bold;'>✔ Auto-vérification OK ! Les 14 916 mots sont fidèlement reconstruits sans remap.</span>");
         } else {
-            statusEl.innerText = "⚠️ COMPRESSION CORROMPUE";
-            statusEl.style.color = "#f85149";
+            log("<br><span style='color:#ff7b72; font-weight:bold;'>⚠️ ALERTE : Corruption détectée dans le flux de sortie.</span>");
         }
-
-        document.getElementById('txt-decoded-output').value = decodedSorted.slice(0, 300).join(', ') + "...";
     }
 </script>
+
 </body>
 </html>

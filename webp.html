@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13K Dictionary Image Packer</title>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #ccc; padding: 20px; }
+        textarea { width: 100%; height: 200px; background: #2d2d2d; color: #fff; border: 1px solid #555; padding: 10px; }
+        button { background: #4CAF50; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 5px; }
+        button:hover { background: #45a049; }
+        .controls { margin-top: 15px; }
+    </style>
+</head>
+<body>
+
+    <h2>Dictionary -> PNG Packer</h2>
+    <p>Paste your 14,916 words separated by a space or newline:</p>
+    <textarea id="dictInput">apple apply april banana band...</textarea>
+    
+    <div class="controls">
+        <button onclick="packAndDownload('column5xN')">1. Download 5xN Continuous</button>
+        <button onclick="packAndDownload('square')">2. Download Square (NxN)</button>
+        <button onclick="packAndDownload('fixed5')">3. Download Fixed 5-Letters</button>
+        <button onclick="packAndDownload('separated')">4. Download Separated (w/ null char)</button>
+    </div>
+
+    <script>
+        function getWords() {
+            return document.getElementById('dictInput').value.trim().split(/[\s\n]+/);
+        }
+
+        function packAndDownload(layoutType) {
+            const words = getWords();
+            let chars = [];
+            let width, height;
+
+            if (layoutType === 'separated') {
+                // Words separated by character 0
+                chars = words.join(String.fromCharCode(0)).split('').map(c => c.charCodeAt(0));
+                width = Math.ceil(Math.sqrt(chars.length));
+                height = width;
+            } 
+            else if (layoutType === 'fixed5') {
+                // Every row is exactly 5 pixels (padded with 0 if word is shorter)
+                width = 5; 
+                height = words.length;
+                words.forEach(w => {
+                    for(let i = 0; i < 5; i++) {
+                        chars.push(i < w.length ? w.charCodeAt(i) : 0); 
+                    }
+                });
+            }
+            else {
+                // Contiguous characters
+                chars = words.join('').split('').map(c => c.charCodeAt(0));
+                
+                if (layoutType === 'column5xN') {
+                    // 5 pixels wide, wrapping continuously 
+                    width = 5; 
+                    height = Math.ceil(chars.length / 5); 
+                } else if (layoutType === 'square') {
+                    // Perfect square layout
+                    width = Math.ceil(Math.sqrt(chars.length));
+                    height = width;
+                }
+            }
+
+            // Create Canvas
+            const canvas = document.createElement('canvas');
+            canvas.width = width; 
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            const imgData = ctx.createImageData(width, height);
+
+            // Pack characters into Grayscale pixels (R=G=B)
+            for (let i = 0; i < chars.length; i++) {
+                const val = chars[i] || 0;
+                imgData.data[i * 4]     = val; // R
+                imgData.data[i * 4 + 1] = val; // G
+                imgData.data[i * 4 + 2] = val; // B
+                imgData.data[i * 4 + 3] = 255; // Alpha must be opaque
+            }
+
+            ctx.putImageData(imgData, 0, 0);
+
+            // Download
+            const link = document.createElement('a');
+            link.download = `dict_${layoutType}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+    </script>
+</body>
+</html>

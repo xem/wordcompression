@@ -1,0 +1,8 @@
+{
+  "name": "wordcompression",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "roadroller": "^2.1.0"
+  }
+}
