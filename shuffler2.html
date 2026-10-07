@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>JS13k - Super Shuffler Séquentiel (Roadroller + Gzip)</title>
+    <script src="words.js"></script>
+    <style>
+        :root { --bg: #0d1117; --panel: #161b22; --accent: #58a6ff; --success: #3fb950; --danger: #f85149; --warning: #d29922; --text: #c9d1d9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #30363d; padding-bottom: 15px; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 24px; color: #f0f6fc; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: var(--panel); border: 1px solid #30363d; border-radius: 6px; padding: 20px; }
+        h2 { margin-top: 0; font-size: 16px; color: #8b949e; }
+        textarea { width: 100%; height: 150px; background: #010409; color: var(--success); border: 1px solid #30363d; border-radius: 6px; font-family: monospace; font-size: 13px; padding: 10px; box-sizing: border-box; resize: vertical; margin-bottom: 10px; }
+        button { background: #238636; color: white; border: 1px solid rgba(240,246,252,0.1); padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; transition: 0.2s; }
+        button:hover { background: #2ea043; }
+        button.stop { background: transparent; border-color: var(--danger); color: var(--danger); }
+        button.stop:hover { background: var(--danger); color: white; }
+        button.blue { background: #1f6feb; }
+        button.blue:hover { background: #388bfd; }
+        .metrics { display: flex; flex-direction: column; gap: 8px; margin: 15px 0; padding: 15px; background: #010409; border-radius: 6px; font-family: monospace; font-size: 14px; border-left: 3px solid var(--accent); }
+        .highlight { color: var(--accent); font-weight: bold; }
+        .log-box { height: 150px; overflow-y: auto; background: #010409; border: 1px solid #30363d; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 12px; color: #8b949e; }
+        .log-entry { margin-bottom: 4px; border-bottom: 1px solid #21262d; padding-bottom: 2px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>Pipeline d'Optimisation Séquentielle JS13k</h1>
+        <div>
+            <span style="margin-right: 15px; font-size: 14px;">Mots chargés: <strong id="lbl-word-count" class="highlight">0</strong></span>
+        </div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Étape 1 : Optimisation du Remap</h2>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="btn-remap" onclick="toggleRemap()">Lancer Opti Remap</button>
+            </div>
+            <div class="metrics">
+                <div>Meilleur Remap : <span id="lbl-best-remap" class="highlight">esaoriltnudpcmyhgbkfwvzxjq</span></div>
+                <div>Taille RR+Gzip : <span id="lbl-remap-size" style="color: var(--success)">-</span> bytes</div>
+                <div>Itérations : <span id="lbl-remap-iter">0</span></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Étape 2 : Shuffle Séquentiel par Niveau (0 ➔ 4)</h2>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button id="btn-shuffle" class="blue" onclick="toggleShuffle()">Lancer Shuffle Séquentiel</button>
+            </div>
+            <div class="metrics">
+                <div>Taille RR+Gzip : <span id="lbl-shuffle-size" style="color: var(--success)">-</span> bytes</div>
+                <div>Niveau en cours : <span id="lbl-current-depth" style="color: #d29922; font-weight: bold;">0</span></div>
+                <div>Swaps testés : <span id="lbl-shuffle-iter">0</span></div>
+                <div>Swaps retenus : <span id="lbl-shuffle-kept" class="highlight">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 20px;">
+        <h2>Résultat Encodé</h2>
+        <textarea id="txt-output" readonly placeholder="L'encodage optimal apparaîtra ici..."></textarea>
+        <div class="log-box" id="log-container"></div>
+    </div>
+</div>
+
+<script type="module">
+    import { Packer } from 'https://esm.sh/roadroller@2.1.0';
+
+    async function getRoadrollerGzipSize(encodedStr) {
+        const jsCode = `let d="${encodedStr}";`;
+        
+        const packer = new Packer([{
+            data: jsCode,
+            type: 'js',
+            action: 'eval'
+        }]);
+
+        await packer.optimize(0);
+        
+        const { firstLine, secondLine } = packer.makeDecoder();
+        const packedCode = firstLine + secondLine;
+        
+        const stream = new Blob([packedCode]).stream().pipeThrough(new CompressionStream('gzip'));
+        const response = new Response(stream);
+        const buffer = await response.arrayBuffer();
+        
+        return buffer.byteLength;
+    }
+
+    function log(msg) {
+        const c = document.getElementById('log-container');
+        const d = document.createElement('div');
+        d.className = 'log-entry';
+        d.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+        c.prepend(d);
+    }
+
+    let dictBase = []; 
+    let dictPlurals = new Set();
+    
+    let bestRemap = "esaoriltnudpcmyhgbkfwvzxjq";
+    let globalBestSize = Infinity;
+    let globalBestEncoded = "";
+    
+    let prefixTree = null;
+    let isRemapping = false;
+    let isShuffling = false;
+
+    async function init() {
+        if (typeof words === 'undefined') {
+            log("ERREUR: words.js introuvable.");
+            return;
+        }
+        
+        const wordSet = new Set(words);
+        let processed = new Set();
+        
+        words.forEach(w => {
+            if (processed.has(w)) return;
+            dictBase.push(w);
+            processed.add(w);
+            if (wordSet.has(w + 's')) {
+                dictPlurals.add(w);
+                processed.add(w + 's');
+            }
+        });
+
+        document.getElementById('lbl-word-count').innerText = words.length + ` (compressé en ${dictBase.length} bases)`;
+        log(`Initialisation... Veuillez patienter pendant l'évaluation de base (RR+Gzip)...`);
+        
+        prefixTree = buildTreeRobust(bestRemap);
+        let list = getListRobust(prefixTree);
+        globalBestEncoded = encodeList(list);
+        
+        globalBestSize = await getRoadrollerGzipSize(globalBestEncoded);
+        updateUI();
+        log(`Taille de base évaluée : ${globalBestSize} bytes (Roadroller + Gzip).`);
+    }
+
+    function remapWord(w, alphabet) {
+        return [...w].map(c => String.fromCharCode(97 + alphabet.indexOf(c))).join('');
+    }
+
+    function buildTreeRobust(alphabet) {
+        let root = { children: {}, order: [], isWord: false, hasS: false };
+        for (let w of dictBase) {
+            let rw = remapWord(w, alphabet);
+            let curr = root;
+            for (let char of rw) {
+                if (!curr.children[char]) {
+                    curr.children[char] = { children: {}, order: [], isWord: false, hasS: false };
+                    curr.order.push(char);
+                }
+                curr = curr.children[char];
+            }
+            curr.isWord = true;
+            if (dictPlurals.has(w)) curr.hasS = true;
+        }
+        
+        function sortNode(node) {
+            node.order.sort();
+            for (let k of node.order) sortNode(node.children[k]);
+        }
+        sortNode(root);
+        return root;
+    }
+
+    function getListRobust(node, currentStr = "", list = []) {
+        if (node.isWord) {
+            list.push(currentStr + (node.hasS ? "9" : ""));
+        }
+        for (let char of node.order) {
+            getListRobust(node.children[char], currentStr + char, list);
+        }
+        return list;
+    }
+
+    function encodeList(list) {
+        let res = "";
+        let prev = "";
+        for (let w of list) {
+            let n = 0;
+            let wBase = w.replace('9', '');
+            let prevBase = prev.replace('9', '');
+            
+            while (n < prevBase.length && n < wBase.length && prevBase[n] === wBase[n]) {
+                n++;
+            }
+            res += n + w.slice(n);
+            prev = w;
+        }
+        return res;
+    }
+
+    function updateUI() {
+        document.getElementById('txt-output').value = globalBestEncoded;
+        document.getElementById('lbl-remap-size').innerText = globalBestSize;
+        document.getElementById('lbl-shuffle-size').innerText = globalBestSize;
+        document.getElementById('lbl-best-remap').innerText = bestRemap;
+    }
+
+    window.toggleRemap = async function() {
+        const btn = document.getElementById('btn-remap');
+        if (isRemapping) {
+            isRemapping = false;
+            btn.innerText = "Lancer Opti Remap";
+            btn.classList.remove("stop");
+            log("Optimisation Remap stoppée.");
+            return;
+        }
+        isRemapping = true;
+        btn.innerText = "Stop Opti Remap";
+        btn.classList.add("stop");
+        log("Démarrage optimisation Remap (RR+Gzip)...");
+
+        let iter = 0;
+        let currentRemapArr = bestRemap.split('');
+        
+        while (isRemapping) {
+            let i = Math.floor(Math.random() * 26);
+            let j = Math.floor(Math.random() * 26);
+            if (i === j) continue;
+
+            let temp = currentRemapArr[i];
+            currentRemapArr[i] = currentRemapArr[j];
+            currentRemapArr[j] = temp;
+            
+            let testRemap = currentRemapArr.join('');
+            
+            let tree = buildTreeRobust(testRemap);
+            let list = getListRobust(tree);
+            let encoded = encodeList(list);
+            
+            let size = await getRoadrollerGzipSize(encoded);
+
+            if (size < globalBestSize) {
+                globalBestSize = size;
+                bestRemap = testRemap;
+                globalBestEncoded = encoded;
+                prefixTree = tree;
+                updateUI();
+                log(`[Remap] Nouveau record: ${size} bytes avec ${bestRemap}`);
+            } else {
+                temp = currentRemapArr[i];
+                currentRemapArr[i] = currentRemapArr[j];
+                currentRemapArr[j] = temp;
+            }
+            
+            iter++;
+            document.getElementById('lbl-remap-iter').innerText = iter;
+            await new Promise(r => setTimeout(r, 0)); 
+        }
+    };
+
+    // Récupère uniquement les noeuds mutables à une profondeur spécifique
+    function getMutableNodes(node, targetDepth, currentDepth = 0, arr = []) {
+        if (currentDepth === targetDepth) {
+            if (node.order.length > 1) arr.push(node);
+        } else if (currentDepth < targetDepth) {
+            for (let k of node.order) {
+                getMutableNodes(node.children[k], targetDepth, currentDepth + 1, arr);
+            }
+        }
+        return arr;
+    }
+
+    window.toggleShuffle = async function() {
+        const btn = document.getElementById('btn-shuffle');
+        if (isShuffling) {
+            isShuffling = false;
+            btn.innerText = "Lancer Shuffle Séquentiel";
+            btn.classList.remove("stop");
+            log("Shuffle Séquentiel stoppé.");
+            return;
+        }
+        isShuffling = true;
+        btn.innerText = "Stop Shuffle Séquentiel";
+        btn.classList.add("stop");
+        log("Démarrage du Shuffle Séquentiel par niveau...");
+
+        let iter = 0;
+        let kept = 0;
+        let currentDepth = 0;
+        let stagnationCounter = 0;
+        
+        // La limite de stagnation augmente avec la profondeur car il y a exponentiellement plus de noeuds
+        const STAGNATION_LIMITS = [100, 300, 800, 1500, 2000];
+
+        while (isShuffling && currentDepth <= 4) {
+            document.getElementById('lbl-current-depth').innerText = currentDepth;
+            let mutables = getMutableNodes(prefixTree, currentDepth);
+
+            // Si plus aucun noeud à cette profondeur ou limite de stagnation atteinte, on descend
+            if (mutables.length === 0 || stagnationCounter > STAGNATION_LIMITS[currentDepth]) {
+                log(`[Niveau ${currentDepth}] Stagnation atteinte (${stagnationCounter} essais). Passage au niveau ${currentDepth + 1}...`);
+                currentDepth++;
+                stagnationCounter = 0;
+                continue;
+            }
+
+            let targetNode = mutables[Math.floor(Math.random() * mutables.length)];
+            
+            let i = Math.floor(Math.random() * targetNode.order.length);
+            let j = Math.floor(Math.random() * targetNode.order.length);
+            if (i === j) continue;
+
+            let temp = targetNode.order[i];
+            targetNode.order[i] = targetNode.order[j];
+            targetNode.order[j] = temp;
+
+            let list = getListRobust(prefixTree);
+            let encoded = encodeList(list);
+            
+            let size = await getRoadrollerGzipSize(encoded);
+
+            if (size < globalBestSize) {
+                globalBestSize = size;
+                globalBestEncoded = encoded;
+                kept++;
+                stagnationCounter = 0; // Remise à zéro du compteur puisqu'on a trouvé une amélioration
+                updateUI();
+                document.getElementById('lbl-shuffle-kept').innerText = kept;
+                log(`[Niveau ${currentDepth}] Record: ${size} bytes`);
+            } else {
+                temp = targetNode.order[i];
+                targetNode.order[i] = targetNode.order[j];
+                targetNode.order[j] = temp;
+                stagnationCounter++;
+            }
+
+            iter++;
+            document.getElementById('lbl-shuffle-iter').innerText = iter;
+            await new Promise(r => setTimeout(r, 0));
+        }
+
+        if (currentDepth > 4) {
+            log("🎉 Optimisation sur les 5 niveaux terminée !");
+            isShuffling = false;
+            btn.innerText = "Lancer Shuffle Séquentiel";
+            btn.classList.remove("stop");
+        }
+    };
+
+    init();
+</script>
+</body>
+</html>
