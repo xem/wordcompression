@@ -38,7 +38,8 @@ New approaches:
 <br>encoded json + RoadRoller.js + zip: 11.0kb (11266b)
 
 - shuffle2.html
-<br>starts from prefix_remapped_shuffled.html, and finds the remap and the shuffle (not only level-0 shuffle, but at every N) that optimize both RoadRoller and Gzip. (11,201b)
+<br>starts from prefix_remapped_shuffled.html, and finds the remap and the shuffle (not only level-0 shuffle, but at every N) that optimize both RoadRoller and Gzip.
+<br>encoded json + RoadRoller.js + zip: 10.9kb (11,201b)
 
 ---
 
